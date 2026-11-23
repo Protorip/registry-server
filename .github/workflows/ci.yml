@@ -32,7 +32,8 @@ jobs:
       - run: pnpm codegen
       - run: pnpm typecheck
       - run: docker build -t registry-server-conformance .
-      - run: pnpm test:conformance
+      - run: pnpm test
+      - run: pnpm test-e2e
         env:
           REGISTRY_TEST_IMAGE: registry-server-conformance
       - run: pnpm pack --dry-run

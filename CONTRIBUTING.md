@@ -25,20 +25,21 @@ From the repository root:
 pnpm install --frozen-lockfile --ignore-scripts
 pnpm codegen
 pnpm typecheck
-pnpm test:conformance
+pnpm test
+pnpm test-e2e
 ```
 
 To also run the container tests against a local image build:
 
 ```sh
 docker build -t registry-server-conformance .
-REGISTRY_TEST_IMAGE=registry-server-conformance pnpm test:conformance
+REGISTRY_TEST_IMAGE=registry-server-conformance pnpm test-e2e
 ```
 
 ## Pull request checklist
 
-- Keep behavior changes covered by tests under `e2e/` (`cli.test.mjs`, `runtime-matrix.test.mjs`, `contracts.test.mjs`, `core.test.mjs`, or `wire.test.mjs`).
-- Run `pnpm codegen`, `pnpm typecheck`, and `pnpm test:conformance` before opening a pull request.
+- Place direct tests beside the source and run them with `pnpm test`. Keep real Buf CLI and runtime conformance tests under `e2e/`.
+- Run `pnpm codegen`, `pnpm typecheck`, `pnpm test`, and `pnpm test-e2e` before opening a pull request.
 - Preserve existing copyright and Apache-2.0 headers on vendored definitions under `proto/buf/alpha/registry/v1alpha1/`.
 - Contributions submitted to this repository are licensed under Apache-2.0, as described in [LICENSE](./LICENSE).
 

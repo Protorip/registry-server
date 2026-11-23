@@ -54,7 +54,8 @@ jobs:
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm codegen
       - run: pnpm typecheck
-      - run: pnpm test:conformance
+      - run: pnpm test
+      - run: pnpm test-e2e
       - name: Publish @protorip/registry-server
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

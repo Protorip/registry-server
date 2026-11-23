@@ -1,8 +1,14 @@
-import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { test } from "node:test";
-import { drizzleNode } from "@protorip/registry-server/node";
-import { createRegistryHandler, migrate } from "@protorip/registry-server";
+import { expect, test, type TestContext } from "vitest";
+import { drizzleNode, sqlite } from "./node.js";
+import { createRegistryHandler, migrate } from "./index.js";
+
+type RpcResult = {
+  code?: string;
+  commits: Array<{ id: string }>;
+  labels: Array<{ name: string }>;
+  modules: Array<{ id: string; visibility: string }>;
+};
 
 test("the core serves requests and closes its database adapter once", async () => {
   const client = new DatabaseSync(":memory:");
@@ -38,12 +44,12 @@ test("the core serves requests and closes its database adapter once", async () =
           }),
         }),
       );
-      assert.equal(response.status, 200, await response.text());
+      expect(response.status, await response.text()).toBe(200);
     } finally {
       await Promise.all([registry.close(), registry.close()]);
     }
-    assert.equal(closeCalls, 1);
-    assert.equal(client.prepare("SELECT name FROM modules").get().name, "widgets");
+    expect(closeCalls).toBe(1);
+    expect(client.prepare("SELECT name FROM modules").get()?.name).toBe("widgets");
   } finally {
     client.close();
   }
@@ -54,13 +60,12 @@ test("resource-scoped lists and filtered downloads honor the full request", asyn
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const root = await mkdtemp(join(tmpdir(), "registry-scoped-rpcs-"));
-  const { sqlite } = await import("@protorip/registry-server/node");
   const registry = createRegistryHandler({
     database: sqlite(":memory:"),
     auth: { mode: "none" },
     storage: { type: "fs", rootDir: root },
   });
-  async function rpc(service, method, body, status = 200) {
+  async function rpc(service: string, method: string, body: object, status = 200) {
     const response = await registry.fetch(
       new Request(`http://localhost/buf.registry.module.v1.${service}/${method}`, {
         method: "POST",
@@ -68,8 +73,8 @@ test("resource-scoped lists and filtered downloads honor the full request", asyn
         body: JSON.stringify(body),
       }),
     );
-    const result = await response.json();
-    assert.equal(response.status, status, JSON.stringify(result));
+    const result = (await response.json()) as RpcResult;
+    expect(response.status, JSON.stringify(result)).toBe(status);
     return result;
   }
   const moduleRef = { name: { owner: "example", module: "widgets" } };
@@ -79,7 +84,7 @@ test("resource-scoped lists and filtered downloads honor the full request", asyn
         { ownerRef: { name: "example" }, name: "widgets", visibility: "MODULE_VISIBILITY_PRIVATE" },
       ],
     });
-    const upload = (label, text) =>
+    const upload = (label: string, text: string) =>
       rpc("UploadService", "Upload", {
         contents: [
           {
@@ -96,15 +101,9 @@ test("resource-scoped lists and filtered downloads honor the full request", asyn
     await upload("main", 'syntax = "proto3"; message Widget { string name = 1; }');
     const resourceRef = { id: first.commits[0].id };
     const commits = await rpc("CommitService", "ListCommits", { resourceRef });
-    assert.deepEqual(
-      commits.commits.map((commit) => commit.id),
-      [resourceRef.id],
-    );
+    expect(commits.commits.map((commit) => commit.id)).toStrictEqual([resourceRef.id]);
     const labels = await rpc("LabelService", "ListLabels", { resourceRef });
-    assert.deepEqual(
-      labels.labels.map((label) => label.name),
-      ["release"],
-    );
+    expect(labels.labels.map((label) => label.name)).toStrictEqual(["release"]);
     const error = await rpc(
       "DownloadService",
       "Download",
@@ -113,7 +112,7 @@ test("resource-scoped lists and filtered downloads honor the full request", asyn
       },
       404,
     );
-    assert.equal(error.code, "not_found");
+    expect(error.code).toBe("not_found");
   } finally {
     await registry.close();
     await rm(root, { recursive: true, force: true });
@@ -131,14 +130,14 @@ test("health checks bypass static authentication and report shutdown", async () 
     registry.fetch(new Request("http://localhost/healthz", { method }));
   try {
     const get = await health();
-    assert.equal(get.status, 200);
-    assert.equal(get.headers.get("content-type"), "application/json");
-    assert.deepEqual(await get.json(), { status: "ok" });
+    expect(get.status).toBe(200);
+    expect(get.headers.get("content-type")).toBe("application/json");
+    expect(await get.json()).toStrictEqual({ status: "ok" });
     const head = await health("HEAD");
-    assert.equal(head.status, 200);
-    assert.equal(await head.text(), "");
+    expect(head.status).toBe(200);
+    expect(await head.text()).toBe("");
     const closing = registry.close();
-    assert.equal((await health()).status, 503);
+    expect((await health()).status).toBe(503);
     await closing;
   } finally {
     await registry.close();
@@ -146,12 +145,11 @@ test("health checks bypass static authentication and report shutdown", async () 
   }
 });
 
-async function s3Registry(t) {
+async function s3Registry(t: TestContext) {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { default: S3rver } = await import("s3rver");
-  const { sqlite } = await import("@protorip/registry-server/node");
   const root = await mkdtemp(join(tmpdir(), "registry-races-"));
   const emulator = new S3rver({
     address: "127.0.0.1",
@@ -160,7 +158,7 @@ async function s3Registry(t) {
     directory: root,
     configureBuckets: [{ name: "registry" }],
   });
-  let pause;
+  let pause: { method: string; entered: () => void; released: Promise<void> } | undefined;
   emulator.middleware.unshift(async (ctx, next) => {
     if (pause?.method === ctx.method && !ctx.query["list-type"]) {
       const { entered, released } = pause;
@@ -185,12 +183,12 @@ async function s3Registry(t) {
     },
     logger() {},
   });
-  t.after(async () => {
+  t.onTestFinished(async () => {
     await registry.close();
     await emulator.close();
     await rm(root, { recursive: true, force: true });
   });
-  async function rpc(service, method, body, status) {
+  async function rpc(service: string, method: string, body: object, status?: number) {
     const response = await registry.fetch(
       new Request(`http://localhost/buf.registry.module.v1.${service}/${method}`, {
         method: "POST",
@@ -198,8 +196,8 @@ async function s3Registry(t) {
         body: JSON.stringify(body),
       }),
     );
-    const result = await response.json();
-    if (status !== undefined) assert.equal(response.status, status, JSON.stringify(result));
+    const result = (await response.json()) as RpcResult;
+    if (status !== undefined) expect(response.status, JSON.stringify(result)).toBe(status);
     return result;
   }
   const moduleRef = { name: { owner: "example", module: "widgets" } };
@@ -215,7 +213,7 @@ async function s3Registry(t) {
       const { objects } = await emulator.store.listObjects("registry", {});
       return objects.map(({ key }) => key).sort();
     },
-    deleteStoredFile(key) {
+    deleteStoredFile(key: string) {
       return emulator.store.deleteObject("registry", key);
     },
     upload(message = "Widget") {
@@ -233,23 +231,23 @@ async function s3Registry(t) {
         ],
       });
     },
-    pauseNext(method) {
-      const entered = Promise.withResolvers();
-      const released = Promise.withResolvers();
+    pauseNext(method: string) {
+      const entered = Promise.withResolvers<void>();
+      const released = Promise.withResolvers<void>();
       pause = { method, entered: entered.resolve, released: released.promise };
       return { entered: entered.promise, release: released.resolve };
     },
   };
 }
 
-async function beforeRelease(operation) {
+async function beforeRelease<T>(operation: Promise<T>) {
   const { setTimeout } = await import("node:timers/promises");
   const timer = new AbortController();
   try {
     return await Promise.race([
       operation,
       setTimeout(5000, undefined, { signal: timer.signal }).then(() => {
-        assert.fail("RPC did not finish while another RPC was waiting on storage");
+        throw new Error("RPC did not finish while another RPC was waiting on storage");
       }),
     ]);
   } finally {
@@ -270,13 +268,12 @@ test("uploads overlap and a duplicate digest can be retried against the winning 
   } finally {
     gate.release();
   }
-  assert.equal((await first).code, "aborted");
+  expect((await first).code).toBe("aborted");
   const winnerId = winner.commits[0].id;
   const otherId = other.commits[0].id;
-  assert.notEqual(winnerId, otherId);
-  assert.equal((await registry.upload()).commits[0].id, winnerId);
-  assert.deepEqual(
-    await registry.storedKeys(),
+  expect(winnerId).not.toBe(otherId);
+  expect((await registry.upload()).commits[0].id).toBe(winnerId);
+  expect(await registry.storedKeys()).toStrictEqual(
     [winnerId, otherId].map((id) => `example/widgets/${id}/files/widget.proto`).sort(),
   );
 });
@@ -293,11 +290,11 @@ test("a download returns not_found when deletion removes a blob after listing", 
     const deletion = await beforeRelease(
       registry.rpc("ModuleService", "DeleteModules", { moduleRefs: [registry.moduleRef] }),
     );
-    assert.deepEqual(deletion, {});
+    expect(deletion).toStrictEqual({});
   } finally {
     gate.release();
   }
-  assert.deepEqual(await download, { code: "not_found", message: "Commit not found" });
+  expect(await download).toStrictEqual({ code: "not_found", message: "Commit not found" });
 });
 
 test("a download fails when an existing commit has no stored files", async (t) => {
@@ -305,9 +302,9 @@ test("a download fails when an existing commit has no stored files", async (t) =
   const { commits } = await registry.upload();
   const resourceRef = { id: commits[0].id };
   const files = await registry.storedKeys();
-  assert.equal(files.length, 1);
+  expect(files.length).toBe(1);
   await registry.deleteStoredFile(files[0]);
-  assert.deepEqual(await registry.storedKeys(), []);
+  expect(await registry.storedKeys()).toStrictEqual([]);
 
   const error = await registry.rpc(
     "DownloadService",
@@ -315,16 +312,15 @@ test("a download fails when an existing commit has no stored files", async (t) =
     { values: [{ resourceRef }] },
     500,
   );
-  assert.equal(error.code, "internal");
+  expect(error.code).toBe("internal");
 });
 
 test("public reads honor module visibility and hide private owners from anonymous callers", async (t) => {
   const { mkdtemp, rm } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const { sqlite } = await import("@protorip/registry-server/node");
   const rootDir = await mkdtemp(join(tmpdir(), "registry-public-"));
-  t.after(() => rm(rootDir, { recursive: true, force: true }));
+  t.onTestFinished(() => rm(rootDir, { recursive: true, force: true }));
   const registry = createRegistryHandler({
     database: sqlite(":memory:"),
     storage: { type: "fs", rootDir },
@@ -338,9 +334,9 @@ test("public reads honor module visibility and hide private owners from anonymou
     },
     logger() {},
   });
-  t.after(() => registry.close());
+  t.onTestFinished(() => registry.close());
 
-  async function rpc(method, body, token, code) {
+  async function rpc(method: string, body: object, token?: string, code?: string) {
     const response = await registry.fetch(
       new Request(`http://localhost/buf.registry.${method}`, {
         method: "POST",
@@ -351,9 +347,9 @@ test("public reads honor module visibility and hide private owners from anonymou
         body: JSON.stringify(body),
       }),
     );
-    const result = await response.json();
-    if (code) assert.equal(result.code, code, JSON.stringify(result));
-    else assert.equal(response.status, 200, JSON.stringify(result));
+    const result = (await response.json()) as RpcResult;
+    if (code) expect(result.code, JSON.stringify(result)).toBe(code);
+    else expect(response.status, JSON.stringify(result)).toBe(200);
     return result;
   }
 
@@ -372,23 +368,22 @@ test("public reads honor module visibility and hide private owners from anonymou
     "psr_test-admin",
   );
   const [dependency, consumer] = modules;
-  assert.equal(consumer.visibility, "MODULE_VISIBILITY_PRIVATE");
-  assert.deepEqual(
-    (await rpc(list, {})).modules.map(({ id }) => id),
-    [dependency.id],
-  );
-  assert.deepEqual(
+  expect(consumer.visibility).toBe("MODULE_VISIBILITY_PRIVATE");
+  expect((await rpc(list, {})).modules.map(({ id }) => id)).toStrictEqual([dependency.id]);
+  expect(
     (await rpc(list, { ownerRefs: [{ name: "public-owner" }] }, "psr_test-writer")).modules.map(
       ({ id }) => id,
     ),
-    [dependency.id],
-  );
+  ).toStrictEqual([dependency.id]);
   for (const name of ["missing-owner", "private-owner"]) {
     await rpc(owners, { ownerRefs: [{ name }] }, undefined, "unauthenticated");
   }
   await rpc(owners, { ownerRefs: [{ name: "missing-owner" }] }, "psr_test-admin", "not_found");
 
-  const file = (path, text) => ({ path, content: Buffer.from(text).toString("base64") });
+  const file = (path: string, text: string) => ({
+    path,
+    content: Buffer.from(text).toString("base64"),
+  });
   const { commits } = await rpc(
     upload,
     {
@@ -419,4 +414,31 @@ test("public reads honor module visibility and hide private owners from anonymou
     },
     "psr_test-writer",
   );
+});
+
+test("CreateModules enforces the configured owner allowlist", async (t) => {
+  const registry = createRegistryHandler({
+    database: sqlite(":memory:"),
+    auth: { mode: "none" },
+    storage: { type: "fs", rootDir: "." },
+    allowedScopes: ["example"],
+  });
+  t.onTestFinished(() => registry.close());
+  const createModule = (owner: string) =>
+    registry.fetch(
+      new Request("http://localhost/buf.registry.module.v1.ModuleService/CreateModules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          values: [
+            { ownerRef: { name: owner }, name: "widgets", visibility: "MODULE_VISIBILITY_PRIVATE" },
+          ],
+        }),
+      }),
+    );
+  const denied = await createModule("other");
+  expect(denied.status).toBe(403);
+  expect((await denied.json()).code).toBe("permission_denied");
+  const allowed = await createModule("example");
+  expect(allowed.status, await allowed.text()).toBe(200);
 });

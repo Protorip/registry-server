@@ -7,7 +7,12 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import S3rver from "s3rver";
 import { serve } from "@hono/node-server";
-import { createRegistryHandler } from "@protorip/registry-server";
+import type { TestContext } from "vitest";
+import {
+  createRegistryHandler,
+  type StaticTokenEntry,
+  type StorageConfig,
+} from "@protorip/registry-server";
 import { sqlite } from "@protorip/registry-server/node";
 
 const exec = promisify(execFile);
@@ -15,26 +20,41 @@ const admin = "psr_test-admin-secret";
 export const reader = "psr_test-reader-secret";
 export const writer = "psr_test-writer-secret";
 export const serverEntrypoint = new URL("../dist/server.js", import.meta.url).pathname;
-const embeddedBun = new URL("./embedded-bun.mjs", import.meta.url).pathname;
+const embeddedBun = new URL("./embedded-bun.ts", import.meta.url).pathname;
 const bun = process.env.BUN_EXECUTABLE ?? "bun";
 
+type Runtime = "embedded Node" | "embedded Bun" | "Bun server" | "docker";
+type AuthMode = "none" | "static";
+type StorageBackend = StorageConfig["type"];
+
+export interface RegistryOptions {
+  allowPublicModules?: boolean;
+  plainHttp?: boolean;
+}
+
+interface BufOptions {
+  cwd?: string;
+  token?: string;
+  input?: string;
+}
+
 export async function startRegistry(
-  t,
-  root,
-  entry,
-  mode,
-  backend,
-  { allowPublicModules = true, plainHttp = false } = {},
+  t: TestContext,
+  root: string,
+  entry: Runtime,
+  mode: AuthMode,
+  backend: StorageBackend,
+  { allowPublicModules = true, plainHttp = false }: RegistryOptions = {},
 ) {
   const dbPath = join(root, "registry.db");
   const rootDir = join(root, "blobs");
-  const tokens = [
+  const tokens: StaticTokenEntry[] = [
     { name: "operator", plain: admin },
     { name: "reader", plain: reader, role: "read" },
     { name: "writer", plain: writer, role: "write", scopes: ["example"] },
   ];
   const bucket = "registry";
-  let storage = { type: "fs", rootDir };
+  let storage: StorageConfig = { type: "fs", rootDir };
   if (backend === "s3") {
     const emulator = new S3rver({
       address: "127.0.0.1",
@@ -44,7 +64,7 @@ export async function startRegistry(
       configureBuckets: [{ name: bucket }],
     });
     const { port } = await emulator.run();
-    t.after(() => emulator.close());
+    t.onTestFinished(() => emulator.close());
     storage = {
       type: "s3",
       bucket,
@@ -58,7 +78,9 @@ export async function startRegistry(
   const cert = join(root, "cert.pem");
   const config = join(root, "buf-config");
   await mkdir(config);
-  let tlsOptions = {};
+  let tlsOptions:
+    | { createServer: typeof createServer; serverOptions: { cert: Buffer; key: Buffer } }
+    | undefined;
   if (plainHttp) {
     await writeFile(join(config, "config.yaml"), 'version: v1\ntls:\n  use: "false"\n');
   } else {
@@ -85,7 +107,7 @@ export async function startRegistry(
       serverOptions: { cert: await readFile(cert), key: await readFile(key) },
     };
   }
-  let handler;
+  let handler: (request: Request) => Response | Promise<Response>;
   if (entry === "embedded Node") {
     const registry = createRegistryHandler({
       database: sqlite(dbPath),
@@ -93,22 +115,22 @@ export async function startRegistry(
       auth: mode === "none" ? { mode } : { mode, tokens, allowPublicModules },
       logger() {},
     });
-    t.after(() => registry.close());
+    t.onTestFinished(() => registry.close());
     handler = registry.fetch;
   } else {
-    const env = {
+    const env: NodeJS.ProcessEnv = {
       ...process.env,
       PORT: "0",
       DB_PATH: dbPath,
       FS_ROOT: rootDir,
       STORAGE_BACKEND: backend,
       S3_BUCKET: bucket,
-      S3_ENDPOINT: storage.endpoint,
+      S3_ENDPOINT: storage.type === "s3" ? storage.endpoint : undefined,
       S3_PREFIX: "conformance",
-      S3_REGION: storage.region,
+      S3_REGION: storage.type === "s3" ? storage.region : undefined,
       S3_FORCE_PATH_STYLE: "true",
-      S3_ACCESS_KEY_ID: storage.accessKeyId,
-      S3_SECRET_ACCESS_KEY: storage.secretAccessKey,
+      S3_ACCESS_KEY_ID: storage.type === "s3" ? storage.accessKeyId : undefined,
+      S3_SECRET_ACCESS_KEY: storage.type === "s3" ? storage.secretAccessKey : undefined,
       AUTH_MODE: mode,
       TOKENS: JSON.stringify(tokens),
       TOKENS_FILE: "",
@@ -123,35 +145,38 @@ export async function startRegistry(
       });
     }
     const docker = entry === "docker";
-    const args = docker
-      ? [
-          "run",
-          "--rm",
-          "--network",
-          "host",
-          "--user",
-          `${process.getuid()}:${process.getgid()}`,
-          "--volume",
-          `${root}:/data`,
-          ...Object.keys(env)
-            .filter(
-              (name) =>
-                name === "PORT" ||
-                name === "AUTH_MODE" ||
-                /^(TOKENS|ALLOW_PUBLIC|S3_|STORAGE_BACKEND|LOG_LEVEL)/.test(name),
-            )
-            .flatMap((name) => ["--env", name]),
-          process.env.REGISTRY_TEST_IMAGE,
-        ]
-      : entry === "embedded Bun"
-        ? [embeddedBun]
-        : [serverEntrypoint];
+    const image = process.env.REGISTRY_TEST_IMAGE;
+    if (docker && !image) throw new Error("REGISTRY_TEST_IMAGE must be set for Docker tests");
+    const args =
+      docker && image
+        ? [
+            "run",
+            "--rm",
+            "--network",
+            "host",
+            "--user",
+            `${process.getuid?.()}:${process.getgid?.()}`,
+            "--volume",
+            `${root}:/data`,
+            ...Object.keys(env)
+              .filter(
+                (name) =>
+                  name === "PORT" ||
+                  name === "AUTH_MODE" ||
+                  /^(TOKENS|ALLOW_PUBLIC|S3_|STORAGE_BACKEND|LOG_LEVEL)/.test(name),
+              )
+              .flatMap((name) => ["--env", name]),
+            image,
+          ]
+        : entry === "embedded Bun"
+          ? [embeddedBun]
+          : [serverEntrypoint];
     const child = spawn(docker ? "docker" : bun, args, {
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });
     const exited = once(child, "exit");
-    t.after(async () => {
+    t.onTestFinished(async () => {
       child.kill();
       await exited;
     });
@@ -161,7 +186,7 @@ export async function startRegistry(
     });
     const lines = createInterface({ input: child.stdout });
     const port = await Promise.race([
-      new Promise((resolve) =>
+      new Promise<number>((resolve) =>
         lines.on("line", (line) => {
           const event = JSON.parse(line);
           if (event.event === "listening") resolve(event.port);
@@ -185,11 +210,21 @@ export async function startRegistry(
     hostname: "127.0.0.1",
   });
   await once(listener, "listening");
-  t.after(() => new Promise((resolve) => listener.close(resolve)));
-  const host = `127.0.0.1:${listener.address().port}`;
+  t.onTestFinished(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        listener.close((error) => (error ? reject(error) : resolve())),
+      ),
+  );
+  const address = listener.address();
+  if (!address || typeof address === "string") throw new Error("Expected a TCP listener");
+  const host = `127.0.0.1:${address.port}`;
   return {
     host,
-    buf(args, { cwd = root, token = mode === "static" ? admin : "", input } = {}) {
+    buf(
+      args: string[],
+      { cwd = root, token = mode === "static" ? admin : "", input }: BufOptions = {},
+    ) {
       const command = exec("buf", args, {
         cwd,
         timeout: 15000,
@@ -203,7 +238,7 @@ export async function startRegistry(
           BUF_TOKEN: token ? `${token}@${host}` : "",
         },
       });
-      if (input !== undefined) command.child.stdin.end(input);
+      if (input !== undefined) command.child.stdin?.end(input);
       return command;
     },
   };
