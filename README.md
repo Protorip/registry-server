@@ -14,7 +14,7 @@ You can deploy the registry as a self-contained Docker image, run the server dir
 
 ## Compatibility
 
-Protorip Registry Server implements the BSR protocol for core Buf CLI workflows. The automated [conformance suite](#conformance-tests) verifies login, module push and pull, label management, schema export, dependency resolution, and breaking-change checks against remote schemas. The suite also verifies runtime and storage parity.
+Protorip Registry Server implements the BSR protocol for core Buf CLI workflows. The automated [conformance suite](#tests) verifies login, module push and pull, label management, schema export, dependency resolution, and breaking-change checks against remote schemas. The suite also verifies runtime and storage parity.
 
 If you want a managed registry with public module mirrors, remote plugins, and automatically generated schema docs, see [protos.rip](https://protos.rip).
 
@@ -283,21 +283,24 @@ Commit the new numbered SQL file, the updated `drizzle/meta/_journal.json`, and 
 
 Review the generated SQL for SQLite constraints that need manual edits, including `STRICT` and `DEFERRABLE INITIALLY DEFERRED`. Separate multiple statements with `--> statement-breakpoint`.
 
-## Conformance tests
+## Tests
 
-With `buf`, `bun`, and `openssl` on `PATH`, generate the bindings and run the suite.
+Generate the bindings with `pnpm codegen`. Run `pnpm test` for unit, service, and handler tests beside the source. These tests require Node.js and use local fixtures.
+
+With `buf`, `bun`, and `openssl` on `PATH`, run `pnpm test-e2e` for the CLI and runtime matrix.
 
 ```sh
 pnpm codegen
-pnpm test:conformance
+pnpm test
+pnpm test-e2e
 
 # Optional on Linux. Include the Docker runtime in the same suite.
 docker build -t registry-server-conformance .
-REGISTRY_TEST_IMAGE=registry-server-conformance pnpm test:conformance
+REGISTRY_TEST_IMAGE=registry-server-conformance pnpm test-e2e
 ```
 
-- The [Buf CLI tests](e2e/cli.test.mjs) verify BSR protocol compatibility through real CLI workflows.
-- The [runtime matrix](e2e/runtime-matrix.test.mjs) runs registry workflows against embedded Node.js and Bun handlers and the standalone Bun server. Each runs with `none` and `static` auth and with filesystem storage and an S3 emulator.
+- The [Buf CLI tests](e2e/cli.test.ts) verify BSR protocol compatibility through real CLI workflows.
+- The [runtime matrix](e2e/runtime-matrix.test.ts) runs registry workflows against embedded Node.js and Bun handlers and the standalone Bun server. Each runs with `none` and `static` auth and with filesystem storage and an S3 emulator.
 
 ## License
 

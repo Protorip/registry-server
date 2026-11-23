@@ -1,11 +1,23 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
+import { expect, test } from "vitest";
 import { create } from "@bufbuild/protobuf";
-import { CommitSchema } from "../dist/gen/buf/registry/module/v1/commit_pb.js";
-import { LabelSchema } from "../dist/gen/buf/registry/module/v1/label_pb.js";
-import { commitMessage, labelMessage } from "../dist/wire.js";
+import { CommitSchema } from "./gen/buf/registry/module/v1/commit_pb.js";
+import { LabelSchema } from "./gen/buf/registry/module/v1/label_pb.js";
+import type { ModuleRow } from "./db.js";
+import { commitMessage, labelMessage } from "./wire.js";
 
-const mod = { id: "a".repeat(32), scope_id: "b".repeat(32) };
+const mod: ModuleRow = {
+  id: "a".repeat(32),
+  scope_id: "b".repeat(32),
+  slug: "example",
+  name: "widgets",
+  visibility: 2,
+  deprecated: 0,
+  default_label_name: "main",
+  description: null,
+  url: null,
+  create_time: 1,
+  update_time: 1,
+};
 const commitId = "c".repeat(32);
 const now = Date.now();
 
@@ -15,6 +27,8 @@ test("commit responses omit the token name stored for audit", () => {
     commitMessage(
       {
         id: commitId,
+        module_id: mod.id,
+        digest_type: 1,
         digest_value: "00".repeat(64),
         source_control_url: null,
         created_by_user_id: "operator",
@@ -23,7 +37,7 @@ test("commit responses omit the token name stored for audit", () => {
       mod,
     ),
   );
-  assert.equal(commit.createdByUserId, "");
+  expect(commit.createdByUserId).toBe("");
 });
 
 test("label responses omit the token name stored for audit", () => {
@@ -33,6 +47,7 @@ test("label responses omit the token name stored for audit", () => {
       {
         id: "d".repeat(32),
         name: "main",
+        module_id: mod.id,
         commit_id: commitId,
         archive_time: null,
         updated_by_user_id: "operator",
@@ -42,5 +57,5 @@ test("label responses omit the token name stored for audit", () => {
       mod,
     ),
   );
-  assert.equal(label.updatedByUserId, "");
+  expect(label.updatedByUserId).toBe("");
 });
