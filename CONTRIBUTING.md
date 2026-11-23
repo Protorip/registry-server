@@ -50,3 +50,9 @@ Report vulnerabilities privately using the instructions in the [security policy]
 ## Community conduct
 
 Follow the [code of conduct](CODE_OF_CONDUCT.md) when participating in the project.
+
+## Release process
+
+Add a changeset with `pnpm exec changeset` when a change affects npm or Docker users. On `main`, Changesets opens or updates a version PR with the package version and changelog. Review and merge that PR, then run **Release** from `main` with the new version.
+
+The workflow publishes to npm and pushes the version, major.minor, and `latest` image tags to GHCR. It then drafts a GitHub Release from the version’s changelog entry. Edit the draft to add highlights or upgrade instructions before publishing the notes.

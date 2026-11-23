@@ -1,34 +1,68 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Package version to release, for example 0.1.0"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
 jobs:
   validate:
-    name: Validate release tag
-    if: github.repository == 'Protorip/registry-server'
+    name: Validate release version
+    if: github.repository == 'Protorip/registry-server' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24
-      - name: Verify tag matches package version
+          persist-credentials: false
+      - id: version
+        name: Match the requested version and tag the release commit
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          EXPECTED="v$(node -p 'JSON.parse(require("fs").readFileSync("package.json", "utf8")).version')"
-          if [ "$GITHUB_REF_NAME" != "$EXPECTED" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json version ($EXPECTED)." >&2
+          set -euo pipefail
+          VERSION=$(node -p 'require("./package.json").version')
+          if [[ ! "$VERSION" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ || "$RELEASE_VERSION" != "$VERSION" ]]; then
+            echo "Expected stable package version $VERSION."
             exit 1
           fi
+          if ! grep -Fxq "## $VERSION" CHANGELOG.md; then
+            echo "Missing changelog entry for $VERSION."
+            exit 1
+          fi
+          TAG="v$VERSION"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists."
+            exit 1
+          fi
+          TAG_REF=$(git ls-remote --refs origin "refs/tags/$TAG")
+          if [[ -n "$TAG_REF" && "${TAG_REF%%$'\t'*}" != "$GITHUB_SHA" ]]; then
+            echo "Tag $TAG already points to another commit."
+            exit 1
+          fi
+          if [[ -z "$TAG_REF" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" --silent
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
   npm:
     needs: validate
     name: Publish npm package
+    environment: npm-publish
     if: github.repository == 'Protorip/registry-server'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -56,16 +90,12 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm test-e2e
+      - run: pnpm build
+      - run: pnpm pack --dry-run
       - name: Publish @protorip/registry-server
         env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          TARBALL=$(pnpm pack --pack-destination "$RUNNER_TEMP" | tail -n 1)
-          if [ -n "$NPM_TOKEN" ]; then
-            NODE_AUTH_TOKEN="$NPM_TOKEN" npm publish "$TARBALL" --provenance --access public
-          else
-            npm publish "$TARBALL" --provenance --access public
-          fi
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm exec changeset publish --no-git-tag
 
   docker:
     needs: [validate, npm]
@@ -92,9 +122,9 @@ jobs:
         with:
           images: ghcr.io/protorip/registry-server
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') }}
+            type=semver,pattern={{version}},value=${{ needs.validate.outputs.tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.tag }}
+            type=raw,value=latest
       - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
@@ -104,3 +134,31 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  draft-release:
+    name: Draft GitHub release
+    needs: [validate, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Draft release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          awk -v heading="## ${TAG#v}" '
+            $0 == heading { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$NOTES"
+          if ! grep -q '[^[:space:]]' "$NOTES"; then
+            echo "Missing changelog entry for $TAG."
+            exit 1
+          fi
+          gh release create "$TAG" --verify-tag --draft --title "$TAG" --notes-file "$NOTES"

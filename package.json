@@ -32,6 +32,10 @@
     },
     "./drizzle/*": "./drizzle/*"
   },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "files": [
     "dist",
     "drizzle",
@@ -53,17 +57,18 @@
     "@connectrpc/connect": "^2.1.1",
     "@hono/node-server": "^1.19.0",
     "@noble/hashes": "^2.0.1",
-    "protobufjs": "^8.0.1",
     "drizzle-orm": "^0.45.4",
+    "protobufjs": "^8.0.1",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@bufbuild/protoc-gen-es": "^2.11.0",
+    "@changesets/cli": "^2.31.1",
+    "@types/bun": "1.4.5",
     "@types/node": "^24.0.0",
     "s3rver": "3.7.1",
     "typescript": "^5.8.3",
-    "vitest": "4.1.11",
-    "@types/bun": "1.4.5"
+    "vitest": "4.1.11"
   },
   "packageManager": "pnpm@12.8.1"
 }
