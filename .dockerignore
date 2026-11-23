@@ -1,0 +1,11 @@
+**
+!package.json
+!pnpm-lock.yaml
+!buf.gen.yaml
+!tsconfig.json
+!proto/
+!src/
+src/gen/
+!drizzle/
+!LICENSE
+!NOTICE

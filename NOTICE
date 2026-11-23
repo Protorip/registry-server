@@ -1,0 +1,12 @@
+Protorip Registry Server
+Copyright 2026 Strange Computer (Marc Porciuncula)
+
+"Protorip", "protos.rip", and the Protorip logo are trademarks of
+Strange Computer (Marc Porciuncula). Under Section 6 of the Apache-2.0
+License, no trademark rights are granted except as required for
+reasonable and customary use in describing the origin of the Work and
+reproducing this NOTICE file.
+
+Legacy AuthnService and User definitions derive from bufbuild/buf
+(Copyright 2020-2025 Buf Technologies, Inc.), licensed under Apache-2.0.
+See LICENSE for the Apache-2.0 license text.

@@ -1,0 +1,29 @@
+name: Feature or conformance request
+description: Request a missing Buf CLI workflow, RPC contract, or embedding option
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: This project targets self-hosted Protobuf module hosting. Managed workflows (web UI, remote plugins, SDK generation, buf.build proxying, team RBAC) are out of scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Workflow or problem
+      description: Which buf CLI command, RPC method, or embedding integration needs this change?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the expected behavior and any relevant bufbuild/registry-proto reference.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope_check
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This stays within self-hosted module hosting, embedding, or static configuration (not hosted BSR workflows).
+          required: true

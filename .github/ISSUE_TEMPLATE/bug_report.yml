@@ -1,0 +1,50 @@
+name: Bug report
+description: Report incorrect Buf CLI behavior, embedding issues, or container bugs
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Check existing issues first and omit any bearer tokens or storage secrets from logs.
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment mode
+      options:
+        - Docker image (ghcr.io/protorip/registry-server)
+        - Standalone server (Node.js or Bun)
+        - Embedded Node (@protorip/registry-server/node)
+        - Embedded Bun (@protorip/registry-server/bun)
+    validations:
+      required: true
+  - type: dropdown
+    id: storage_auth
+    attributes:
+      label: Storage and authentication
+      options:
+        - Filesystem blobs + static auth
+        - Filesystem blobs + no auth
+        - S3 blobs + static auth
+        - S3 blobs + no auth
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Registry and Buf CLI versions
+      placeholder: "@protorip/registry-server 0.1.0, buf 1.50.0, Node 24 / Bun 1.4.5"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include the minimal buf.yaml, failing command, and expected vs actual behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and error output
+      description: Redact TOKENS, TOKENS_FILE secrets, BUF_TOKEN, and S3 credentials before pasting.
+      render: text

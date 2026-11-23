@@ -1,0 +1,12 @@
+version: v2
+inputs:
+  - module: buf.build/bufbuild/registry:10a2296bfbef477c8f9ba1405db39ac6
+    paths:
+      - buf/registry/module/v1
+      - buf/registry/owner/v1
+  - directory: proto
+plugins:
+  - local: protoc-gen-es
+    out: src/gen
+    opt: [target=ts, import_extension=js]
+    include_imports: true

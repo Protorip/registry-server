@@ -1,0 +1,67 @@
+{
+  "name": "@protorip/registry-server",
+  "version": "0.1.0",
+  "description": "Self-hosted, Buf-compatible Protobuf module registry server and Node/Bun handler",
+  "author": "Strange Computer (Marc Porciuncula)",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Protorip/registry-server.git"
+  },
+  "homepage": "https://github.com/Protorip/registry-server#readme",
+  "bugs": {
+    "url": "https://github.com/Protorip/registry-server/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24",
+    "bun": ">=1.4.5"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./bun": {
+      "types": "./dist/bun.d.ts",
+      "default": "./dist/bun.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
+    "./drizzle/*": "./drizzle/*"
+  },
+  "files": [
+    "dist",
+    "drizzle",
+    "LICENSE",
+    "NOTICE",
+    "README.md"
+  ],
+  "scripts": {
+    "codegen": "buf generate",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test:conformance": "tsc && node --test e2e/*.test.mjs"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.700.0",
+    "@bufbuild/protobuf": "^2.11.0",
+    "@bufbuild/protovalidate": "^1.1.1",
+    "@connectrpc/connect": "^2.1.1",
+    "@hono/node-server": "^1.19.0",
+    "@noble/hashes": "^2.0.1",
+    "protobufjs": "^8.0.1",
+    "drizzle-orm": "^0.45.4",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@bufbuild/protoc-gen-es": "^2.11.0",
+    "@types/node": "^24.0.0",
+    "s3rver": "3.7.1",
+    "typescript": "^5.8.3",
+    "@types/bun": "1.4.5"
+  },
+  "packageManager": "pnpm@12.8.1"
+}
