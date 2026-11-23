@@ -45,4 +45,8 @@ REGISTRY_TEST_IMAGE=registry-server-conformance pnpm test-e2e
 
 ## Security
 
-Do not open public issues for security vulnerabilities. Report vulnerabilities privately through [GitHub Security Advisories](https://github.com/Protorip/registry-server/security/advisories/new).
+Report vulnerabilities privately using the instructions in the [security policy](SECURITY.md).
+
+## Community conduct
+
+Follow the [code of conduct](CODE_OF_CONDUCT.md) when participating in the project.
